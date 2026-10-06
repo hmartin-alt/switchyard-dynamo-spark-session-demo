@@ -33,7 +33,7 @@ The saved pricing assumptions in `configs/prefill-router/shopping-costs-token-pr
 | E4B | $0.02 | $0.10 |
 | 31B | $0.09 | $0.34 |
 
-The E4B rate is supported by a [third-party DeepInfra listing](https://computeprices.com/providers/deep-infra/models/gemma-4-e4b), but could not be reverified directly on DeepInfra. The 31B rate is the experiment's saved OpenRouter assumption, not a current quote. Savings are conditional on these rates and exclude encoder compute, idle GPUs, storage, and networking.
+Cost estimates use published API pricing references saved for the experiment, rather than arbitrary assumptions. They are not verified current quotes and exclude router and infrastructure costs.
 
 ## Requirements
 
