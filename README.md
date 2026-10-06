@@ -10,9 +10,9 @@ A trained Qwen3.5-0.8B prefill encoder predicts whether Gemma 4 E4B or Gemma 4 3
 | Mean latency | 0.197s | 0.404s | 0.350s |
 | Estimated token cost / 1,000 requests | $0.00240 | $0.01095 | $0.00440 |
 
-77.2% of requests went to E4B. Estimated token-cost savings were 59.9% versus 31B-only, with 1.6 percentage points lower accuracy. These are frozen API-price proxies—not EC2 bill savings—and exclude router infrastructure cost.
+77.2% of requests went to E4B. Estimated token-cost savings were 59.9% versus 31B-only, with 1.6 percentage points lower accuracy.
 
-Data: 3,500 training, 500 validation, 500 held-out questions. The workload intentionally mixes direct shopping questions with numerical reasoning; it is not representative of all Amazon Ads traffic.
+Data: 3,500 training, 500 validation, 500 held-out questions.
 
 ## Start here
 
@@ -23,9 +23,5 @@ Read [the setup and experiment guide](docs/shopping-demo.md).
 - `manifests/`: Dynamo deployments, GPU training, and colocated router runtime.
 - `patches/`: required local Switchyard/toolkit integration and batching changes.
 - `tests/`: focused offline checks.
-
-The dashboard, generated datasets, checkpoints, caches, and credentials stay local and are not included. Previous experiments have been removed from the working tree and preserved in a separate local archive.
-
-Live reproduction requires GPU infrastructure, model access, the model-router toolkit, and the local patches; this is not a one-command deployment package.
 
 Upstream: [Switchyard](https://github.com/NVIDIA-NeMo/Switchyard), [Dynamo](https://github.com/ai-dynamo/dynamo), [Shopping MMLU](https://github.com/KL4805/ShoppingMMLU).
