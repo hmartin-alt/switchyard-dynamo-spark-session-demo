@@ -2,6 +2,7 @@ apiVersion: nvidia.com/v1beta1
 kind: DynamoGraphDeployment
 metadata:
   name: efficient
+  namespace: dynamo
 spec:
   components:
   - name: Frontend
@@ -15,46 +16,57 @@ spec:
           envFrom:
           - secretRef:
               name: hf-token-secret
-
   - name: VllmDecodeWorker
     type: worker
     replicas: 1
     podTemplate:
       spec:
+        nodeSelector:
+          workload: model-serving
         volumes:
         - name: hf-cache
           hostPath:
             path: /opt/hf-cache
             type: DirectoryOrCreate
+        - name: router-runtime
+          hostPath:
+            path: /opt/switchyard-colocated
+            type: DirectoryOrCreate
         containers:
         - name: main
           image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0
+          command: ["bash", "/router-runtime/start-colocated.sh"]
           securityContext:
             runAsUser: 0
           livenessProbe:
             httpGet:
               path: /live
               port: system
-            initialDelaySeconds: 0
             timeoutSeconds: 10
             periodSeconds: 30
             failureThreshold: 10
-          command: ["python3", "-m", "dynamo.vllm"]
-          args:
-          - --model
-          - /hf-cache/models--google--diffusiongemma-26B-A4B-it/snapshots/f7f5b7f5fa82ffc52addd066915886d497f5517b
-          - --served-model-name
-          - efficient
-          - --max-model-len
-          - "8192"
-          - --gpu-memory-utilization
-          - "0.90"
+          ports:
+          - containerPort: 9090
+            name: system
+          - containerPort: 19090
+            name: nixl
+          - containerPort: 4000
+            name: router
           envFrom:
           - secretRef:
               name: hf-token-secret
+          env:
+          - name: HF_HOME
+            value: /hf-cache
+          - name: HF_HUB_CACHE
+            value: /hf-cache/hub
+          - name: SWITCHYARD_RUNTIME_VARIANT
+            value: profiled-baseline-v2
           volumeMounts:
           - name: hf-cache
             mountPath: /hf-cache
+          - name: router-runtime
+            mountPath: /router-runtime
           resources:
             limits:
               nvidia.com/gpu: "1"

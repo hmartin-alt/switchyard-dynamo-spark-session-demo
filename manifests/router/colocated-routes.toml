@@ -1,0 +1,31 @@
+schema_version = 1
+
+[llm_clients.dgd_efficient]
+format = "openai_chat"
+base_url = "http://efficient-frontend.dynamo.svc.cluster.local:8000/v1"
+api_key_env = "DUMMY_KEY"
+
+[llm_clients.dgd_capable]
+format = "openai_chat"
+base_url = "http://capable-frontend.dynamo.svc.cluster.local:8000/v1"
+api_key_env = "DUMMY_KEY"
+
+[targets.weak]
+id = "efficient"
+llm_client = "dgd_efficient"
+extra_body = { temperature = 0.0, seed = 42 }
+
+[targets.strong]
+id = "capable"
+llm_client = "dgd_capable"
+extra_body = { temperature = 0.0, seed = 42 }
+
+[routes.shopping]
+id = "shopping"
+type = "prefill_router"
+targets = ["weak", "strong"]
+checkpoint = "/router-runtime/prefill_router.pt"
+device = "cuda"
+max_length = 2048
+batch_size = 16
+tolerance = 0.1760250329971314

@@ -8,6 +8,8 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      nodeSelector:
+        workload: model-serving
       volumes:
       - name: hf-cache
         hostPath:
@@ -22,32 +24,37 @@ spec:
         args:
         - |
           set -e
-          mkdir -p /hf-cache && chmod 777 /hf-cache
-          echo "Downloading google/diffusiongemma-26B-A4B-it..."
+          mkdir -p /hf-cache/hub
+          echo "Downloading google/gemma-4-E4B-it..."
           python3 -c "
           from huggingface_hub import snapshot_download
-          snapshot_download(
-              repo_id='google/diffusiongemma-26B-A4B-it',
-              revision='f7f5b7f5fa82ffc52addd066915886d497f5517b',
-              cache_dir='/hf-cache')
-          print('diffusiongemma done')
+          path = snapshot_download(
+              repo_id='google/gemma-4-E4B-it',
+              cache_dir='/hf-cache/hub')
+          print(f'gemma-4-E4B-it done: {path}')
           "
-          echo "Downloading Qwen/Qwen3.6-35B-A3B-FP8..."
+          echo "Downloading google/gemma-4-31B-it..."
           python3 -c "
           from huggingface_hub import snapshot_download
-          snapshot_download(
-              repo_id='Qwen/Qwen3.6-35B-A3B-FP8',
-              revision='95a723d08a9490559dae23d0cff1d9466213d989',
-              cache_dir='/hf-cache')
-          print('qwen done')
+          path = snapshot_download(
+              repo_id='google/gemma-4-31B-it',
+              cache_dir='/hf-cache/hub')
+          print(f'gemma-4-31B-it done: {path}')
           "
           echo "All models downloaded."
         envFrom:
         - secretRef:
             name: hf-token-secret
         env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token-secret
+              key: HUGGING_FACE_HUB_TOKEN
         - name: HF_HOME
           value: /hf-cache
+        - name: HF_HUB_CACHE
+          value: /hf-cache/hub
         volumeMounts:
         - name: hf-cache
           mountPath: /hf-cache

@@ -1,22 +1,18 @@
 routing:
   method: prefill
-  # Updated by `model-router train --output-dir checkpoints/` after training
-  checkpoint: checkpoints/prefill_router.pt
-  tolerance: 0.20          # allow up to 20pp below best model — routes more to efficient
   encoder: Qwen/Qwen3.5-0.8B
   encoder_backend: transformers
-
+  tolerance: 0.0
 models:
   - name: efficient
-    display_name: DiffusionGemma 26B (Efficient)
     litellm_model: openai/efficient
-    cost_per_m_input_tokens: 0.05
-    cost_per_m_output_tokens: 0.20
-    api_base: http://localhost:8000/v1
-
+    api_base: http://localhost:18000/v1
+    cost_per_m_input_tokens: 0.0
+    cost_per_m_output_tokens: 0.0
   - name: capable
-    display_name: Qwen3.6 35B FP8 (Capable)
     litellm_model: openai/capable
-    cost_per_m_input_tokens: 0.50
-    cost_per_m_output_tokens: 2.00
-    api_base: http://localhost:8001/v1
+    api_base: http://localhost:18001/v1
+    cost_per_m_input_tokens: 0.0
+    cost_per_m_output_tokens: 0.0
+# Training config; prices are supplied separately to the validation sweep.
+# Deployment policy is in manifests/router/colocated-routes.toml.

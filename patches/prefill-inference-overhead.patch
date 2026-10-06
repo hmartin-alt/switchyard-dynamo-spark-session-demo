@@ -1,0 +1,33 @@
+--- a/model_router_toolkit/prefill/extract.py
++++ b/model_router_toolkit/prefill/extract.py
+@@ -344,6 +344,15 @@
+             attention_mask = inputs["attention_mask"].to(self._model.device)
+ 
+             with torch.no_grad():
++                # Opt-in serving optimization: hidden states are unchanged.
++                # Keep one token's logits instead of computing the unused
++                # vocabulary projection for every input token.
++                forward_kwargs = {}
++                if os.environ.get("PREFILL_LAST_LOGIT_ONLY") == "1":
++                    import inspect
++                    if "logits_to_keep" not in inspect.signature(self._model.forward).parameters:
++                        raise ValueError("Encoder does not explicitly support logits_to_keep")
++                    forward_kwargs["logits_to_keep"] = 1
+                 outputs = self._model(
+                     input_ids=input_ids,
+                     attention_mask=attention_mask,
+@@ -351,4 +360,5 @@
+                     use_cache=False,
++                    **forward_kwargs,
+                 )
+ 
+             hidden_states = outputs.hidden_states
+@@ -365,7 +375,7 @@
+                         all_mean[li].append(hs.mean(dim=0).cpu())
+ 
+             del outputs, hidden_states, input_ids, attention_mask
+-            if torch.cuda.is_available():
++            if torch.cuda.is_available() and os.environ.get("PREFILL_RETAIN_CUDA_CACHE") != "1":
+                 torch.cuda.empty_cache()
+ 
+         return PrefillResult(

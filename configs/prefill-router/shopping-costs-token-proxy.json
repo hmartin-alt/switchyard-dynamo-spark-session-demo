@@ -1,0 +1,26 @@
+{
+  "basis": "api_proxy",
+  "source": "Public hosted API prices accessed 2026-10-05. Efficient uses the exact google/gemma-4-E4B-it DeepInfra rate. Capable uses the exact google/gemma-4-31b-it OpenRouter rate.",
+  "source_urls": [
+    "https://deepinfra.com/models",
+    "https://openrouter.ai/api/v1/models"
+  ],
+  "models": {
+    "efficient": {
+      "served_model": "google/gemma-4-E4B-it",
+      "pricing_proxy": "google/gemma-4-E4B-it",
+      "pricing_provider": "DeepInfra",
+      "input_usd_per_million": 0.02,
+      "output_usd_per_million": 0.10
+    },
+    "capable": {
+      "served_model": "google/gemma-4-31b-it",
+      "pricing_proxy": "google/gemma-4-31b-it",
+      "pricing_provider": "OpenRouter",
+      "input_usd_per_million": 0.09,
+      "output_usd_per_million": 0.34
+    }
+  },
+  "router_usd_per_request": null,
+  "limitations": "Market/API proxy only. Excludes Switchyard encoder cost, idle GPU capacity, EKS, storage, and network. It estimates pay-per-token economics, not the bill for the current always-on Dynamo fleet."
+}

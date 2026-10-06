@@ -1,0 +1,37 @@
+# Local environments and generated Python files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# Credentials and machine-local configuration
+.env
+.env.*
+!.env.example
+.aws/
+*.pem
+*.key
+*secret*.yaml
+*secret*.yml
+configs/prefill-router/ec2-allocation.json
+
+# Generated experiments, weights, and encoder features remain local.
+/data/
+/cache/
+/checkpoints/
+*.log
+/output/
+/tmp/
+
+# Dashboard stays local; it is not part of the shared experiment repository.
+/demo/shopping/
+/scripts/shopping-mmlu/demo-server.py
+
+# Build and editor products
+target/
+node_modules/
+.idea/
+.vscode/

@@ -1,0 +1,29 @@
+--- a/model_router_toolkit/prefill/extract.py
++++ b/model_router_toolkit/prefill/extract.py
+@@ -353,1 +353,1 @@
+-                outputs = self._model(
++                outputs = self._forward_for_features(layers,
+@@ -390,1 +390,23 @@
++    def _forward_for_features(self, layers, **kwargs):
++        if os.environ.get("PREFILL_SKIP_UNUSED_LAYERS") != "1":
++            return self._model(**kwargs)
++        # Verified for this decoder-only Qwen architecture only. Keep one
++        # extra layer so the requested hidden state is an intermediate,
++        # not the final normalized state. Never use this for generation.
++        if type(self._model).__name__ != "Qwen3_5ForCausalLM":
++            raise ValueError("Layer skipping is verified only for Qwen3_5ForCausalLM")
++        cfg = self._model.model.config
++        original_depth = cfg.num_hidden_layers
++        required_depth = max(layers) + 1
++        if required_depth >= original_depth:
++            return self._model(**kwargs)
++        # The native server serializes this scorer. Do not concurrently call
++        # this same model instance while temporarily reducing its depth.
++        cfg.num_hidden_layers = required_depth
++        try:
++            return self._model(**kwargs)
++        finally:
++            cfg.num_hidden_layers = original_depth
++
++
+     def unload(self) -> None:

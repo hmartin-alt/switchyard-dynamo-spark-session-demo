@@ -1,0 +1,201 @@
+diff --git a/crates/prefill-router/python/transformers_forward.py b/crates/prefill-router/python/transformers_forward.py
+index 3cc12fa8..547511a4 100644
+--- a/crates/prefill-router/python/transformers_forward.py
++++ b/crates/prefill-router/python/transformers_forward.py
+@@ -134,6 +134,27 @@ def _resolve_device(torch: Any, override: str | None) -> str:
+ class TransformersForward:
+     """Run encoder extraction and learned confidence inference in one pass."""
+ 
++    def __new__(
++        cls,
++        checkpoint_path: str | Path,
++        *,
++        device: str | None = None,
++        cache_dir: str | None = None,
++    ) -> Any:
++        import torch
++
++        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
++        if {"model_names", "transforms", "shared_trunk"}.issubset(checkpoint.keys()):
++            return ToolkitForward(
++                checkpoint_path,
++                device=device,
++                cache_dir=cache_dir,
++                checkpoint=checkpoint,
++            )
++        instance = super().__new__(cls)
++        instance._checkpoint = checkpoint
++        return instance
++
+     def __init__(
+         self,
+         checkpoint_path: str | Path,
+@@ -143,7 +164,8 @@ class TransformersForward:
+     ) -> None:
+         import torch
+ 
+-        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
++        checkpoint = self._checkpoint
++        del self._checkpoint
+         _validate_checkpoint_contract(checkpoint)
+ 
+         encoder = checkpoint["encoder"]
+@@ -335,3 +357,50 @@ class TransformersForward:
+             self._torch.cuda.empty_cache()
+         if hasattr(self._torch, "mps") and self._torch.backends.mps.is_available():
+             self._torch.mps.empty_cache()
++
++
++class ToolkitForward:
++    """Adapter for model-router toolkit prefill checkpoints."""
++
++    def __init__(
++        self,
++        checkpoint_path: str | Path,
++        *,
++        device: str | None = None,
++        cache_dir: str | None = None,
++        checkpoint: dict[str, Any] | None = None,
++    ) -> None:
++        from model_router_toolkit.prefill.scorer import load_scorer
++
++        self._checkpoint = checkpoint
++        self._checkpoint_path = checkpoint_path
++        self._scorer = load_scorer(checkpoint_path)
++        import torch
++
++        self._device = _resolve_device(torch, device)
++        # PrefillScorer defaults to CPU; configure before lazy weight loading.
++        self._scorer._device = self._device
++        self._cache_dir = cache_dir
++        self._model_names = [str(model) for model in checkpoint["model_names"]]
++        first_transform = next(iter(checkpoint["transforms"].values()))
++        self._model_path = str(first_transform["encoder"])
++
++    def metadata(self) -> tuple[str, int]:
++        """Return the encoder and ordered output count consumed by Rust."""
++        return self._model_path, len(self._model_names)
++
++    def forward(self, prompts: list[str], batch_size: int, max_length: int) -> bytes:
++        """Return a row-major F32 probability matrix for ordered prompts."""
++        if not prompts or any(not prompt for prompt in prompts):
++            raise ValueError("prompts must be non-empty")
++        if batch_size <= 0 or max_length <= 0:
++            raise ValueError("batch_size and max_length must be positive")
++
++        rows = []
++        for prompt in prompts:
++            scores = self._scorer.score(prompt)
++            rows.append(scores.confidences)
++        return np.ascontiguousarray(rows, dtype=np.float32).tobytes()
++
++    def unload(self) -> None:
++        self._scorer.unload()
+diff --git a/crates/prefill-router/src/algorithm.rs b/crates/prefill-router/src/algorithm.rs
+index b0ed4efa..c211308f 100644
+--- a/crates/prefill-router/src/algorithm.rs
++++ b/crates/prefill-router/src/algorithm.rs
+@@ -35,6 +35,8 @@ pub struct PrefillRouterConfig {
+     pub max_length: usize,
+     /// Maximum prompts per encoder forward pass.
+     pub batch_size: usize,
++    /// Allow lower-cost earlier targets within this probability gap of the best target.
++    pub tolerance: f32,
+ }
+ 
+ impl PrefillRouterConfig {
+@@ -48,6 +50,7 @@ impl PrefillRouterConfig {
+             cache_dir: forward.cache_dir,
+             max_length: forward.max_length,
+             batch_size: forward.batch_size,
++            tolerance: 0.0,
+         }
+     }
+ 
+@@ -60,6 +63,7 @@ impl PrefillRouterConfig {
+             cache_dir,
+             max_length,
+             batch_size,
++            tolerance,
+         } = self;
+         let forward = TransformersForward::new(TransformersForwardConfig {
+             checkpoint,
+@@ -68,7 +72,7 @@ impl PrefillRouterConfig {
+             max_length,
+             batch_size,
+         })?;
+-        PrefillRouterAlgo::from_forward(targets, forward)
++        PrefillRouterAlgo::from_forward(targets, forward, tolerance)
+     }
+ }
+ 
+@@ -82,12 +86,14 @@ pub struct PrefillRouterAlgo {
+     targets: Vec<ModelId>,
+     default_target: ModelId,
+     affinity: AffinityRouter,
++    tolerance: f32,
+ }
+ 
+ impl PrefillRouterAlgo {
+     pub(crate) fn from_forward(
+         targets: Vec<ModelId>,
+         forward: impl PrefillForward + 'static,
++        tolerance: f32,
+     ) -> Result<Self> {
+         let Some(default_target) = targets.first().cloned() else {
+             return Err(PrefillRouterError::InvalidConfiguration(
+@@ -102,6 +108,7 @@ impl PrefillRouterAlgo {
+             affinity: AffinityRouter::new()
+                 .with_message_hash_fallback()
+                 .with_release_on_user_turn(),
++            tolerance,
+         })
+     }
+ }
+@@ -160,9 +167,15 @@ impl Algorithm for PrefillRouterAlgo {
+                 .map_err(|message| LibsyError::AlgorithmError {
+                     message: format!("prefill router prediction failed: {message}"),
+                 })?;
++                let best = predictions
++                    .iter()
++                    .map(|(_, probability)| *probability)
++                    .max_by(|left, right| left.total_cmp(right))
++                    .ok_or(LibsyError::NoTargets)?;
++                let threshold = best - self.tolerance;
+                 predictions
+                     .into_iter()
+-                    .max_by(|(_, left), (_, right)| left.total_cmp(right))
++                    .find(|(_, probability)| *probability >= threshold)
+                     .map(|(target, _)| target)
+                     .ok_or(LibsyError::NoTargets)?
+             }
+diff --git a/crates/switchyard-runner/src/algorithm.rs b/crates/switchyard-runner/src/algorithm.rs
+index e742d48b..0e207fb3 100644
+--- a/crates/switchyard-runner/src/algorithm.rs
++++ b/crates/switchyard-runner/src/algorithm.rs
+@@ -443,6 +443,9 @@ pub enum AlgorithmSpec {
+         max_length: Option<usize>,
+         /// Maximum prompts per encoder forward pass.
+         batch_size: Option<usize>,
++        /// Allow lower-cost earlier targets within this probability gap of the best target.
++        #[serde(default)]
++        tolerance: f32,
+     },
+ }
+ 
+@@ -1419,6 +1422,7 @@ fn build_algorithm(
+             cache_dir,
+             max_length,
+             batch_size,
++            tolerance,
+         } => {
+             #[cfg(feature = "prefill-router")]
+             {
+@@ -1435,6 +1439,7 @@ fn build_algorithm(
+                 if let Some(batch_size) = batch_size {
+                     config.batch_size = *batch_size;
+                 }
++                config.tolerance = *tolerance;
+                 let algorithm = config.build().map_err(|error| {
+                     AlgorithmConfigError::with_source(
+                         format!("prefill_router route {route_name}: {error}"),
