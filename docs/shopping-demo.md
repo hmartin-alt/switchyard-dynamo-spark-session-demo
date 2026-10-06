@@ -10,15 +10,11 @@ The dataset contains real Shopping MMLU questions and their original multiple-ch
 - Easy tasks: direct attributes, categories, compatibility, and commonsense.
 - Hard tasks: product numerical reasoning and unit conversion.
 
-Previously inspected pilot rows were restricted to training. The builder preserves question text and labels, rather than relabeling examples to favor either model.
-
 ## Frozen policy
 
 The score is `lambda * predicted_correctness - (1-lambda) * normalized_token_cost`. Fixed model costs use training-token medians and the saved per-token price snapshot, normalized by capable-model cost.
 
 Validation selected lambda `0.816052255920879`, equivalent to native two-model tolerance `0.1760250329971314`. This permits the efficient target when its predicted correctness is within that tolerance of the best target; it does not guarantee that every selected request loses no more than that much actual accuracy.
-
-Checkpoint SHA256: `5c3e0704368f248a469d6762252bb3a1257bfd7016c885417de1707488247bdf`.
 
 ## Final held-out results
 
@@ -28,7 +24,7 @@ Checkpoint SHA256: `5c3e0704368f248a469d6762252bb3a1257bfd7016c885417de170748824
 | Mean end-to-end latency | 0.197s | 0.404s | 0.350s |
 | Token-priced dollars per 1,000 requests | 0.002399 | 0.010954 | 0.004396 |
 
-Routing selected efficient for 386/500 requests and capable for 114/500. The same-mix random baseline has expected accuracy 85.936%; this is an analytical expectation, not a separate live randomized trial. The token-priced cost reduction is 59.9%, not a demonstrated reduction in the fixed EC2 fleet bill.
+Routing selected efficient for 386/500 requests and capable for 114/500. The same-mix random baseline has expected accuracy 85.936%. The token-priced cost reduction is 59.9%, not a demonstrated reduction in the fixed EC2 fleet bill.
 
 Prices in `configs/prefill-router/shopping-costs-token-proxy.json` are a frozen experiment snapshot, not a live price quote. Router compute, idle capacity, storage, and networking are excluded from that view. GPU colocation reduces routing overhead but does not make routing free.
 
