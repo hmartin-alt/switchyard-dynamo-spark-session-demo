@@ -1,67 +1,78 @@
-# Current shopping routing experiment
+# Setup and workflow
 
-## Workload and data boundaries
+## Data
 
-The dataset contains real Shopping MMLU questions and their original multiple-choice answers. Task-level quotas create an intentionally easy-heavy shopping workload; these results are not an estimate for all Amazon Ads traffic or the full Shopping MMLU benchmark.
+We use real Shopping MMLU questions with their original choices and answers:
 
-- Training: 3,500 questions (2,850 easy, 650 hard).
-- Validation: 500 questions (400 easy, 100 hard), used to select the policy.
-- Test: 500 questions (400 easy, 100 hard), evaluated after freezing the policy.
-- Easy tasks: direct attributes, categories, compatibility, and commonsense.
-- Hard tasks: product numerical reasoning and unit conversion.
-
-## Frozen policy
-
-The score is `lambda * predicted_correctness - (1-lambda) * normalized_token_cost`. Fixed model costs use training-token medians and the saved per-token price snapshot, normalized by capable-model cost.
-
-Validation selected lambda `0.816052255920879`, equivalent to native two-model tolerance `0.1760250329971314`. This permits the efficient target when its predicted correctness is within that tolerance of the best target; it does not guarantee that every selected request loses no more than that much actual accuracy.
-
-## Final held-out results
-
-| Metric | Efficient | Capable | Routed |
+| Split | Easy | Hard | Total |
 | --- | ---: | ---: | ---: |
-| Accuracy | 83.2% | 95.2% | 93.6% |
-| Mean end-to-end latency | 0.197s | 0.404s | 0.350s |
-| Token-priced dollars per 1,000 requests | 0.002399 | 0.010954 | 0.004396 |
+| Training | 2,850 | 650 | 3,500 |
+| Validation | 400 | 100 | 500 |
+| Held-out test | 400 | 100 | 500 |
 
-Routing selected efficient for 386/500 requests and capable for 114/500. The same-mix random baseline has expected accuracy 85.936%. The token-priced cost reduction is 59.9%, not a demonstrated reduction in the fixed EC2 fleet bill.
+Easy questions cover attributes, categories, compatibility, and commonsense. Hard questions require product arithmetic or unit conversion. Previously inspected pilot questions are restricted to training.
 
-Prices in `configs/prefill-router/shopping-costs-token-proxy.json` are a frozen experiment snapshot, not a live price quote. Router compute, idle capacity, storage, and networking are excluded from that view. GPU colocation reduces routing overhead but does not make routing free.
+Validation selects the routing policy; the held-out test measures the frozen setup. See the [README](../README.md#results) for results. A random router using the same model mix has expected accuracy of 85.9%; this is a calculated baseline, not a live randomized run.
 
-## Reproduction prerequisites and workflow
+## Cost policy
 
-Use Python 3.10+, the model-router toolkit's prefill/training dependencies, OpenAI's Python client, and Matplotlib. Live serving requires EKS with the Dynamo operator, GPU worker capacity, and the `hf-token-secret` Kubernetes secret in namespace `dynamo`. Never commit that secret.
+The policy balances predicted correctness against estimated model cost:
 
-The retained deployment files are:
+`score = lambda × predicted correctness − (1 − lambda) × relative cost`
 
-- `manifests/dynamo/prefetch-job.yaml`: populate model caches.
-- `manifests/router/colocated-builder.yaml`: build the patched runtime with `scripts/shopping-mmlu/restore-colocated-runtime.sh`.
-- `manifests/router/train-large.yaml`: GPU training worker.
-- `manifests/dynamo/dgd-efficient-colocated.yaml`: E4B plus encoder/router.
-- `manifests/dynamo/dgd-capable.yaml`: 31B workers.
-- `manifests/router/colocated-service.yaml`: router service.
-- `manifests/router/colocated-routes.toml` and `start-colocated.sh`: frozen serving policy and launcher.
+Each model's typical request cost comes from its median training input/output token counts multiplied by the saved token prices. Dividing both costs by the capable model's cost makes capable cost 1 and efficient cost a smaller fraction.
 
-These manifests use node-local hostPath storage. Restore the runtime and model snapshots on every scheduled node, or pin pods to the prepared node. Verify the snapshot paths before starting workers. The capable manifest requests two replicas; size or adjust that intentionally for available GPUs. Apply resources explicitly in namespace `dynamo`.
+Validation selected lambda approximately 0.816, equivalent to Switchyard tolerance approximately 0.176. This lets Switchyard choose E4B when its predicted success is close enough to 31B's. Exact serving values live in `manifests/router/colocated-routes.toml` and `start-colocated.sh`; tolerance is not a guarantee about actual accuracy loss.
 
-The build script expects the already locally patched Switchyard source and toolkit source in the builder's `/runtime`; it is not a source downloader. See both patch READMEs before building.
+Final cost reporting uses actual response token counts, not training medians.
 
-1. Obtain the official Shopping MMLU archive under its upstream terms. `tiered-large.py` verifies its expected hash. Preserve the prior pilot inputs needed to reproduce the original exclusion list; a fresh dataset build is not automatically identical to this run.
-2. Build the dataset with `scripts/shopping-mmlu/tiered-large.py --archive <data.zip> --output <new-directory>`. Inspect its manifest and frozen split hashes.
-3. Collect both models' development predictions using `tiered-large-evaluate.py`, then prepare router labels with `tiered-large-router.py`. These experiment scripts contain fixed artifact paths: inspect their defaults before running, and do not overwrite historical results.
-4. Train the router on training data only using `configs/prefill-router/shopping-pool.yaml` and the toolkit's training command. Save it under `checkpoints/shopping-tiered-real-large-v1/`. Before sweeping, save a `checkpoint.json` in the router artifact directory with a `checkpoint_sha256` field matching that file. Sweep token-priced policy on validation, then freeze it with `tiered-large-policy.py`. Preserve the checkpoint, dataset, cost, and policy hashes together.
-5. Deploy the patched Switchyard runtime with the matching checkpoint and policy, then evaluate the reserved test once using `tiered-heldout-live.py`. Check each script's arguments and paths before launching.
+The saved pricing assumptions in `configs/prefill-router/shopping-costs-token-proxy.json` are:
 
-See `patches/README.md` for the exact local integration base and patch. The recorded setup is not a claim that an unmodified upstream binary accepts these checkpoints. Live deployment also needs the model-router Python environment and restored model/cache files; node-local storage may be lost when worker nodes are removed.
+| Model | Input / million tokens | Output / million tokens |
+| --- | ---: | ---: |
+| E4B | $0.02 | $0.10 |
+| 31B | $0.09 | $0.34 |
 
-Generated artifacts live under ignored `data/`, `cache/`, and `checkpoints/`. They must be regenerated or shared separately for exact reproduction; cloning this repository alone does not supply a trained checkpoint. The original final report is `data/shopping-mmlu/tiered-real-large-router-v1/heldout-live-token-v1-report.json`.
+The E4B rate is supported by a [third-party DeepInfra listing](https://computeprices.com/providers/deep-infra/models/gemma-4-e4b), but could not be reverified directly on DeepInfra. The 31B rate is the experiment's saved OpenRouter assumption, not a current quote. Savings are conditional on these rates and exclude encoder compute, idle GPUs, storage, and networking.
 
-The dashboard is local-only and intentionally excluded from the shared repository.
+## Requirements
 
-## Offline checks
+- Python 3.10+, the model-router toolkit with prefill/training dependencies, OpenAI's Python client, and Matplotlib.
+- EKS with the Dynamo operator and sufficient GPU capacity.
+- Access to both Gemma models, configured through `hf-token-secret` in namespace `dynamo`.
+- The [local Switchyard runtime changes](../patches/README.md).
+- Dataset and checkpoint artifacts, generated locally or supplied separately.
+
+## Workflow
+
+1. **Build the dataset:** run `tiered-large.py --archive <data.zip> --output <new-directory>` from `scripts/shopping-mmlu/`. The builder requires the audited official archive and the original prior-pilot inputs for its exclusion list.
+2. **Collect training labels:** run `tiered-large-evaluate.py`, then `tiered-large-router.py`.
+3. **Train:** use the toolkit's training command with `configs/prefill-router/shopping-pool.yaml` and the training CSV. Save the checkpoint under `checkpoints/shopping-tiered-real-large-v1/`.
+4. **Select the policy:** record the checkpoint's SHA256 in `checkpoint.json` under the router artifact directory, then run `tiered-token-cost-sweep.py` on validation and freeze the result with `tiered-large-policy.py`.
+5. **Deploy:** restore the runtime and model caches, then deploy the models and router using the files below. Match the serving checkpoint and tolerance to the frozen policy.
+6. **Evaluate:** run `tiered-heldout-live.py` against the direct-model and Switchyard endpoints with fresh output paths.
+
+Scripts contain experiment-specific paths. Check their arguments and defaults before running; do not overwrite saved evidence. The checkpoint and policy metadata are used by the scripts to reject mismatched artifacts.
+
+## Deployment files
+
+| File | Purpose |
+| --- | --- |
+| `manifests/dynamo/prefetch-job.yaml` | Download model weights. |
+| `manifests/router/train-large.yaml` | GPU training pod. |
+| `manifests/router/colocated-builder.yaml` | Runtime-building pod. |
+| `manifests/dynamo/dgd-efficient-colocated.yaml` | E4B and colocated encoder/router. |
+| `manifests/dynamo/dgd-capable.yaml` | 31B workers; currently requests two replicas. |
+| `manifests/router/colocated-service.yaml` | Expose the router endpoint. |
+| `manifests/router/colocated-routes.toml` | Target endpoints and routing policy. |
+| `manifests/router/start-colocated.sh` | Start the efficient model and router. |
+
+Apply resources in namespace `dynamo`. These manifests use node-local storage: prepare the model snapshots and runtime on every eligible node, or pin pods to a prepared node. Check GPU capacity and snapshot paths before deployment. Node removal can erase these files.
+
+## Checks
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-These checks do not start GPU nodes or make model requests.
+These are offline checks; they do not start GPUs or send inference requests.
