@@ -20,6 +20,10 @@ spec:
     type: worker
     replicas: 1
     podTemplate:
+      metadata:
+        labels:
+          app: switchyard-production-rr
+          switchyard-replica: efficient
       spec:
         nodeSelector:
           workload: model-serving
@@ -35,7 +39,7 @@ spec:
         containers:
         - name: main
           image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0
-          command: ["bash", "/router-runtime/start-colocated.sh"]
+          command: ["bash", "/router-runtime/start-efficient-router.sh"]
           securityContext:
             runAsUser: 0
           livenessProbe:
@@ -45,6 +49,11 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
             failureThreshold: 10
+          readinessProbe:
+            exec:
+              command: ["bash", "-c", "curl -fsS http://127.0.0.1:9090/live >/dev/null && curl -fsS http://127.0.0.1:4000/v1/models >/dev/null"]
+            timeoutSeconds: 10
+            periodSeconds: 10
           ports:
           - containerPort: 9090
             name: system
@@ -60,8 +69,8 @@ spec:
             value: /hf-cache
           - name: HF_HUB_CACHE
             value: /hf-cache/hub
-          - name: SWITCHYARD_RUNTIME_VARIANT
-            value: profiled-baseline-v2
+          - name: SWITCHYARD_PREFIX_CACHE_MODE
+            value: disabled
           volumeMounts:
           - name: hf-cache
             mountPath: /hf-cache

@@ -1,24 +1,26 @@
 schema_version = 1
 
-[llm_clients.dgd_efficient]
+[llm_clients.efficient]
 format = "openai_chat"
 base_url = "http://efficient-frontend.dynamo.svc.cluster.local:8000/v1"
 api_key_env = "DUMMY_KEY"
 
-[llm_clients.dgd_capable]
+[llm_clients.capable]
 format = "openai_chat"
 base_url = "http://capable-frontend.dynamo.svc.cluster.local:8000/v1"
 api_key_env = "DUMMY_KEY"
 
 [targets.weak]
 id = "efficient"
-llm_client = "dgd_efficient"
-extra_body = { temperature = 0.0, seed = 42 }
+llm_client = "efficient"
+omit_body_fields = ["model"]
+extra_body = { model = "efficient", temperature = 0.0, seed = 42 }
 
 [targets.strong]
 id = "capable"
-llm_client = "dgd_capable"
-extra_body = { temperature = 0.0, seed = 42 }
+llm_client = "capable"
+omit_body_fields = ["model"]
+extra_body = { model = "capable", temperature = 0.0, seed = 42 }
 
 [routes.shopping]
 id = "shopping"

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Run in the colocated-builder pod after copying source and patches to /runtime.
+# Run once in the colocated-builder pod against fresh source and patches in /runtime.
 set -euo pipefail
 cd /runtime
 apt-get update
-apt-get install -y build-essential pkg-config libssl-dev curl patch
+apt-get install -y build-essential pkg-config libssl-dev curl git patch
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/install-rust.sh
 sh /tmp/install-rust.sh -y --profile minimal --default-toolchain 1.96.1
 export PATH=/home/dynamo/.cargo/bin:/root/.cargo/bin:$PATH
 python3 -m pip install --target /runtime/python --no-deps scikit-learn joblib threadpoolctl narwhals scipy
+git -C /runtime/switchyard-src apply --check /runtime/patches/switchyard-prefill-local.patch
+git -C /runtime/switchyard-src apply /runtime/patches/switchyard-prefill-local.patch
 cp patches/batching/algorithm.rs switchyard-src/crates/prefill-router/src/algorithm.rs
 cp patches/batching/microbatch.rs switchyard-src/crates/prefill-router/src/microbatch.rs
 cp patches/batching/transformers_forward.py switchyard-src/crates/prefill-router/python/transformers_forward.py

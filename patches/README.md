@@ -13,10 +13,9 @@ The Switchyard integration patch targets commit `a601a9a3f9db149a1ad430fa43b1463
 
 ## Build
 
-1. Apply `switchyard-prefill-local.patch` to the matching Switchyard checkout using `git apply`.
-2. Place the patched checkout at `/runtime/switchyard-src`, toolkit source at `/runtime/llm-router-src`, and this patch directory at `/runtime/patches` in the builder pod.
-3. Run `scripts/shopping-mmlu/restore-colocated-runtime.sh` there. It installs build dependencies, applies toolkit optimizations and batching overlays, and builds `switchyard-server-profiled`.
+1. Place a **fresh, unpatched** matching Switchyard checkout at `/runtime/switchyard-src`, compatible toolkit source at `/runtime/llm-router-src`, and this patch directory at `/runtime/patches` in the builder pod.
+2. Place `scripts/shopping-mmlu/restore-colocated-runtime.sh` at `/runtime/restore-colocated-runtime.sh` and run it **once**. It checks and applies the Switchyard integration patch, applies toolkit optimizations and batching overlays, installs build dependencies, and builds `switchyard-server-profiled`.
 
-The script expects prepared source trees; it does not download them. Use a fresh toolkit copy when applying its patches. The serving Python environment must include the model-router toolkit and its dependencies.
+The script expects prepared source trees; it does not download them. Use a fresh toolkit copy when applying its patches. The serving Python environment must include the model-router toolkit and its dependencies. The source and checkpoint are not distributed by this repository.
 
 See the [deployment guide](../docs/shopping-demo.md#deployment-files) for the runtime mounts and launcher.

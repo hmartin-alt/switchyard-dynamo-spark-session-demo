@@ -30,6 +30,7 @@ spec:
           from huggingface_hub import snapshot_download
           path = snapshot_download(
               repo_id='google/gemma-4-E4B-it',
+              revision='ee0ef6023621cff504d758262d4e04895a5af4a2',
               cache_dir='/hf-cache/hub')
           print(f'gemma-4-E4B-it done: {path}')
           "
@@ -38,6 +39,7 @@ spec:
           from huggingface_hub import snapshot_download
           path = snapshot_download(
               repo_id='google/gemma-4-31B-it',
+              revision='842da3794eaa0b77d5f08bae87a17459d91ff475',
               cache_dir='/hf-cache/hub')
           print(f'gemma-4-31B-it done: {path}')
           "

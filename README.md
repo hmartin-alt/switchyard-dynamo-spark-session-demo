@@ -1,42 +1,22 @@
-# Shopping routing with Switchyard + Dynamo
+# Switchyard + Dynamo shopping router
 
-Switchyard chooses between Gemma 4 E4B (efficient) and Gemma 4 31B (capable) for shopping questions. A Qwen3.5-0.8B prefill encoder and trained routing head predict each model's likelihood of answering correctly. The policy balances that prediction against estimated token cost.
+This repository is a serving reference for the Amazon Ads shopping demo. Switchyard's trained prefill router chooses between Gemma 4 E4B (`efficient`) and Gemma 4 31B (`capable`) for each Shopping MMLU question. Both models have separate Dynamo Graph Deployments (DGDs) on one two-GPU `g7e.12xlarge`. Each GPU runs one model worker and one colocated copy of the Qwen3.5-0.8B prefill encoder/router; a Kubernetes Service exposes the two router replicas.
 
-Both models run on Dynamo. The encoder shares the efficient model's GPU.
+| GPU allocation | Dynamo Graph Deployment | Colocated processes |
+| --- | --- | --- |
+| One GPU | `efficient` | Gemma 4 E4B worker + Switchyard prefill router |
+| Other GPU | `capable` | Gemma 4 31B worker + Switchyard prefill router |
 
-## Results
+The manifests allocate one GPU to each worker but do not pin numeric GPU IDs. The two router replicas share the same frozen checkpoint, targets, tolerance, and request settings. The Service distributes connections across healthy replicas. It does not guarantee an exact 50/50 request split for every client.
 
-On 500 held-out Shopping MMLU questions:
+## Reproduce the serving setup
 
-| Metric | E4B only | 31B only | Switchyard |
-| --- | ---: | ---: | ---: |
-| Accuracy | 83.2% | 95.2% | 93.6% |
-| Mean request latency | 0.197s | 0.404s | 0.350s |
-| Estimated token cost / 1,000 requests | $0.00240 | $0.01095 | $0.00440 |
+Start with the [deployment guide](docs/shopping-demo.md). It covers model access, pinned model snapshots, building the patched Switchyard runtime, staging the trained checkpoint, applying both DGDs and the Service, and checking both router replicas. The default manifests disable vLLM prefix caching. An **opt-in, version-guarded experimental shared-prefix-only cache policy** is included for reproducing the later controlled cache study; it is not a general production recommendation.
 
-<<<<<<< HEAD
-77.2% of requests went to E4B. Estimated token-cost savings were 59.9% versus 31B-only, with 1.6 percentage points lower accuracy.
+The checkpoint, model weights, credentials, source checkouts, and Kubernetes cluster are **not** committed. The repo therefore provides serving code and a deployment recipe, not a turnkey cluster. Training/tuning helpers under `scripts/shopping-mmlu/` document how the routing policy was produced. No AIPerf runner, load-generation dataset, or capacity-benchmark artifacts are included.
 
-Data: 3,500 training, 500 validation, 500 held-out questions.
-=======
-Switchyard sent 77.2% of requests to E4B, with 1.6 percentage points lower accuracy than 31B-only. Under the saved pricing assumptions, estimated token cost was 59.9% lower.
+## Scope of the measured result
 
-Cost figures exclude router compute and infrastructure; they are not EC2 bill savings. The E4B price is corroborated by a third-party listing but has not been reverified directly with DeepInfra. See the [pricing assumptions](docs/shopping-demo.md#cost-policy).
->>>>>>> 61dc6b3 (Clean up docs to only include necessary relevant information)
+The controlled shared-prefix-only comparison found 93.4% held-out accuracy for Switchyard versus 95.2% for 31B-only. On the same complete G7e instance, selected SLO-compliant throughput was 191.56 versus 122.23 requests/s, implying **36.2% lower measured G7e cost per compliant request**. This used 500 held-out questions sampled repeatedly, two-token answers, an experimental 32-token cache cap, and a 1-second latency target met by at least 95% of requests. It is a scoped infrastructure-efficiency measurement, **not** a claim about production Amazon Ads traffic or total deployment cost. The serving manifests in this repo default to cache disabled, so those numbers do not describe their default cache mode.
 
-## Getting started
-
-Follow the [setup and workflow guide](docs/shopping-demo.md).
-
-- `scripts/shopping-mmlu/` — dataset preparation, evaluation, and policy selection.
-- `configs/prefill-router/` — training configuration and pricing assumptions.
-- `manifests/` — GPU training and Dynamo/Switchyard deployment.
-- `patches/` — required local runtime changes.
-- `tests/` — offline checks.
-
-<<<<<<< HEAD
-=======
-The dataset is an intentionally easy-heavy shopping workload, not a representative sample of all Amazon Ads traffic. Data, checkpoints, model weights, credentials, and the dashboard are not included.
-
->>>>>>> 61dc6b3 (Clean up docs to only include necessary relevant information)
 Upstream: [Switchyard](https://github.com/NVIDIA-NeMo/Switchyard), [Dynamo](https://github.com/ai-dynamo/dynamo), [Shopping MMLU](https://github.com/KL4805/ShoppingMMLU).

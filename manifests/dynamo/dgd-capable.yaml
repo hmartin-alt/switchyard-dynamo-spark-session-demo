@@ -2,6 +2,7 @@ apiVersion: nvidia.com/v1beta1
 kind: DynamoGraphDeployment
 metadata:
   name: capable
+  namespace: dynamo
 spec:
   components:
   - name: Frontend
@@ -18,8 +19,12 @@ spec:
 
   - name: VllmDecodeWorker
     type: worker
-    replicas: 2
+    replicas: 1
     podTemplate:
+      metadata:
+        labels:
+          app: switchyard-production-rr
+          switchyard-replica: capable
       spec:
         nodeSelector:
           workload: model-serving
@@ -27,6 +32,10 @@ spec:
         - name: hf-cache
           hostPath:
             path: /opt/hf-cache
+            type: DirectoryOrCreate
+        - name: router-runtime
+          hostPath:
+            path: /opt/switchyard-colocated
             type: DirectoryOrCreate
         containers:
         - name: main
@@ -41,16 +50,19 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
             failureThreshold: 10
-          command: ["python3", "-m", "dynamo.vllm"]
-          args:
-          - --model
-          - /hf-cache/hub/models--google--gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475
-          - --served-model-name
-          - capable
-          - --max-model-len
-          - "8192"
-          - --gpu-memory-utilization
-          - "0.90"
+          readinessProbe:
+            exec:
+              command: ["bash", "-c", "curl -fsS http://127.0.0.1:9090/live >/dev/null && curl -fsS http://127.0.0.1:4000/v1/models >/dev/null"]
+            timeoutSeconds: 10
+            periodSeconds: 10
+          command: ["bash", "/router-runtime/start-capable-router.sh"]
+          ports:
+          - containerPort: 9090
+            name: system
+          - containerPort: 19090
+            name: nixl
+          - containerPort: 4000
+            name: router
           envFrom:
           - secretRef:
               name: hf-token-secret
@@ -59,9 +71,13 @@ spec:
             value: /hf-cache
           - name: HF_HUB_CACHE
             value: /hf-cache/hub
+          - name: SWITCHYARD_PREFIX_CACHE_MODE
+            value: disabled
           volumeMounts:
           - name: hf-cache
             mountPath: /hf-cache
+          - name: router-runtime
+            mountPath: /router-runtime
           resources:
             limits:
               nvidia.com/gpu: "1"

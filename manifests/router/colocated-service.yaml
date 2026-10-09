@@ -1,13 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: switchyard-colocated
+  name: switchyard-production-rr
   namespace: dynamo
 spec:
   selector:
-    nvidia.com/dynamo-graph-deployment-name: efficient
-    nvidia.com/dynamo-component: VllmDecodeWorker
+    app: switchyard-production-rr
   ports:
-  - name: http
+  - name: router
     port: 4000
     targetPort: 4000
